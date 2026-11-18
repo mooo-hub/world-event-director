@@ -1,0 +1,10 @@
+/AGENTS.md
+/HANDOFF*.md
+/docs/
+/demo.html
+/scripts/
+/tests/
+.e2e-current.log
+.unit-current.log
+.unit-baseline.log
+.test-all-final.log

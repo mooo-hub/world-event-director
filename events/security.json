@@ -1,0 +1,67 @@
+[
+  {
+    "id": "tailing_vehicle_detected",
+    "title": "回程车辆被跟踪",
+    "category": "security",
+    "severity": "high",
+    "enabled": true,
+    "weight": 3,
+    "cooldownTurns": 20,
+    "conditions": {
+      "requiredCharacterTags": ["security_sensitive"],
+      "requiredWorldTags": ["security", "安保", "势力"],
+      "requiredNpcs": ["陈默"],
+      "blockedIfActiveEvent": true
+    },
+    "presentation": {
+      "preferredActor": "陈默",
+      "signals": ["后视镜反复出现同一辆车", "安保耳机传来低声警报", "路线临时更改"]
+    },
+    "effects": {
+      "mustInterrupt": false,
+      "requiredAction": "主角色或安保人员必须改变路线并确认用户安全",
+      "cancelCurrentPlan": false,
+      "allowLocationChange": true,
+      "userImpact": "用户被临时带离原路线并感到气氛紧张",
+      "requiredConsequences": ["路线变化", "安保等级提升", "后续对来源保持警惕"]
+    },
+    "aftermath": {
+      "minTurns": 2,
+      "maxTurns": 4,
+      "possibleConsequences": ["保护欲增强", "行动受限", "幕后势力浮现"]
+    }
+  },
+  {
+    "id": "key_npc_missing",
+    "title": "关键 NPC 短暂失联",
+    "category": "security",
+    "severity": "critical",
+    "enabled": true,
+    "weight": 2,
+    "cooldownTurns": 35,
+    "conditions": {
+      "requiredCharacterTags": ["security_sensitive"],
+      "requiredWorldTags": ["security", "组织", "势力"],
+      "requiredNpcs": ["秦朗", "陈默", "凌风"],
+      "minTurnsSinceLastCritical": 30,
+      "blockedIfActiveEvent": true
+    },
+    "presentation": {
+      "preferredActor": "陈默",
+      "signals": ["定位信号消失", "通讯频道静默", "安保系统弹出红色告警"]
+    },
+    "effects": {
+      "mustInterrupt": true,
+      "requiredAction": "主角色必须立刻确认关键 NPC 状态并启动应急处置",
+      "cancelCurrentPlan": true,
+      "allowLocationChange": true,
+      "userImpact": "用户被要求留在安全地点，行动受到限制",
+      "requiredConsequences": ["当前场景中断", "应急联络启动", "至少一条线索指向外部威胁"]
+    },
+    "aftermath": {
+      "minTurns": 3,
+      "maxTurns": 6,
+      "possibleConsequences": ["信任危机", "疲惫和隐瞒", "安全规则升级"]
+    }
+  }
+]

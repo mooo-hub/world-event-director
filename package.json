@@ -1,0 +1,14 @@
+{
+  "name": "world-event-director",
+  "version": "0.3.0-rc.5",
+  "description": "SillyTavern UI extension that schedules persistent world events and injects hidden director instructions.",
+  "type": "module",
+  "keywords": [
+    "sillytavern",
+    "extension",
+    "roleplay",
+    "event-director"
+  ],
+  "author": "Robert Smith + Codex",
+  "license": "AGPL-3.0-or-later"
+}

@@ -1,0 +1,34 @@
+[
+  {
+    "id": "family_alliance_probe",
+    "title": "家族合作试探",
+    "category": "family",
+    "severity": "high",
+    "enabled": true,
+    "weight": 2,
+    "cooldownTurns": 24,
+    "conditions": {
+      "requiredCharacterTags": ["family_pressure"],
+      "requiredWorldTags": ["family", "家族", "联姻"],
+      "requiredNpcs": [],
+      "blockedIfActiveEvent": true
+    },
+    "presentation": {
+      "preferredActor": "家族长辈",
+      "signals": ["一封正式请柬", "长辈秘书来电", "合作方突然到访"]
+    },
+    "effects": {
+      "mustInterrupt": false,
+      "requiredAction": "主角色必须处理家族合作或联姻试探带来的压力",
+      "cancelCurrentPlan": false,
+      "allowLocationChange": true,
+      "userImpact": "用户感到自己与主角色关系被外部势力审视",
+      "requiredConsequences": ["关系压力显性化", "家族议题进入后续对话"]
+    },
+    "aftermath": {
+      "minTurns": 2,
+      "maxTurns": 5,
+      "possibleConsequences": ["隐瞒", "保护", "公开立场", "被迫赴约"]
+    }
+  }
+]

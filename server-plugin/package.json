@@ -1,0 +1,11 @@
+{
+  "name": "world-event-director-server",
+  "version": "0.3.0-rc.5",
+  "description": "Optional SillyTavern server plugin proxy for World Event Director.",
+  "main": "index.js",
+  "type": "commonjs",
+  "license": "AGPL-3.0-or-later",
+  "dependencies": {
+    "undici": "^6.21.3"
+  }
+}

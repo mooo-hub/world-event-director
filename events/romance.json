@@ -1,0 +1,34 @@
+[
+  {
+    "id": "awkward_public_rumor",
+    "title": "暧昧传闻外泄",
+    "category": "romance",
+    "severity": "normal",
+    "enabled": true,
+    "weight": 3,
+    "cooldownTurns": 12,
+    "conditions": {
+      "requiredCharacterTags": [],
+      "requiredWorldTags": ["relationship", "romance", "关系"],
+      "requiredNpcs": [],
+      "blockedIfActiveEvent": true
+    },
+    "presentation": {
+      "preferredActor": "社交媒体",
+      "signals": ["手机弹出热搜截图", "朋友发来试探消息", "助理递来舆情简报"]
+    },
+    "effects": {
+      "mustInterrupt": false,
+      "requiredAction": "当前角色必须对传闻作出情绪或行动反应",
+      "cancelCurrentPlan": false,
+      "allowLocationChange": false,
+      "userImpact": "用户被卷入关系误会或公开压力",
+      "requiredConsequences": ["关系张力上升", "角色需要解释态度"]
+    },
+    "aftermath": {
+      "minTurns": 2,
+      "maxTurns": 3,
+      "possibleConsequences": ["试探", "保护", "公开与否的分歧"]
+    }
+  }
+]

@@ -1,0 +1,68 @@
+[
+  {
+    "id": "corporate_secret_leak",
+    "title": "集团核心机密泄露",
+    "category": "business",
+    "severity": "critical",
+    "enabled": true,
+    "weight": 4,
+    "cooldownTurns": 30,
+    "conditions": {
+      "requiredCharacterTags": ["corporate_power"],
+      "requiredWorldTags": ["company", "security", "集团", "商业"],
+      "requiredNpcs": ["秦朗", "陈默"],
+      "minTurnsSinceLastCritical": 30,
+      "blockedIfActiveEvent": true
+    },
+    "presentation": {
+      "preferredActor": "秦朗",
+      "signals": ["加密电话", "紧急文件", "秦朗神色异常"]
+    },
+    "effects": {
+      "mustInterrupt": true,
+      "requiredAction": "主角色立即前往集团总部确认泄密范围",
+      "cancelCurrentPlan": true,
+      "allowLocationChange": true,
+      "newLocation": "集团总部",
+      "userImpact": "陈默护送用户进入安全区域",
+      "requiredConsequences": ["当前场景中断", "原定计划取消", "后续调查持续出现"]
+    },
+    "aftermath": {
+      "minTurns": 3,
+      "maxTurns": 5,
+      "possibleConsequences": ["角色疲惫", "延迟回复", "用户不满", "安全限制加强"]
+    }
+  },
+  {
+    "id": "emergency_board_meeting",
+    "title": "临时董事会施压",
+    "category": "business",
+    "severity": "high",
+    "enabled": true,
+    "weight": 3,
+    "cooldownTurns": 18,
+    "conditions": {
+      "requiredCharacterTags": ["corporate_power"],
+      "requiredWorldTags": ["company", "family", "集团"],
+      "requiredNpcs": [],
+      "blockedIfActiveEvent": true
+    },
+    "presentation": {
+      "preferredActor": "秘书处",
+      "signals": ["临时会议通知", "董事会加密群消息", "助理低声提醒"]
+    },
+    "effects": {
+      "mustInterrupt": false,
+      "requiredAction": "主角色必须重新安排接下来的时间并处理董事会压力",
+      "cancelCurrentPlan": false,
+      "allowLocationChange": true,
+      "userImpact": "用户感受到主角色被迫分心或改期",
+      "requiredConsequences": ["计划被压缩", "角色必须解释或隐瞒压力来源"]
+    },
+    "aftermath": {
+      "minTurns": 2,
+      "maxTurns": 4,
+      "possibleConsequences": ["关系紧张", "行程调整", "商业压力外溢"]
+    }
+  }
+]

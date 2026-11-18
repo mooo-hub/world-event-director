@@ -1,0 +1,34 @@
+[
+  {
+    "id": "weather_shift",
+    "title": "天气骤变",
+    "category": "daily",
+    "severity": "ambient",
+    "enabled": true,
+    "weight": 5,
+    "cooldownTurns": 8,
+    "conditions": {
+      "requiredCharacterTags": [],
+      "requiredWorldTags": [],
+      "requiredNpcs": [],
+      "blockedIfActiveEvent": false
+    },
+    "presentation": {
+      "preferredActor": "环境",
+      "signals": ["窗外雨声忽然变密", "远处传来雷声", "夜风卷起落叶"]
+    },
+    "effects": {
+      "mustInterrupt": false,
+      "requiredAction": "让当前角色注意到环境变化，但不要强行改变主线",
+      "cancelCurrentPlan": false,
+      "allowLocationChange": false,
+      "userImpact": "用户能感到气氛或行动细节被轻微影响",
+      "requiredConsequences": ["氛围变化", "行动细节略有调整"]
+    },
+    "aftermath": {
+      "minTurns": 1,
+      "maxTurns": 2,
+      "possibleConsequences": ["室内外选择变化", "人物靠近或避雨"]
+    }
+  }
+]
