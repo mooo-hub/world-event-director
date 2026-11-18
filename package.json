@@ -1,6 +1,6 @@
 {
   "name": "world-event-director",
-  "version": "0.3.0-rc.5",
+  "version": "0.3.0-rc.6",
   "description": "SillyTavern UI extension that schedules persistent world events and injects hidden director instructions.",
   "type": "module",
   "keywords": [

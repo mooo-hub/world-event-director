@@ -8,6 +8,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   autoCritical: false,
   templateEventsEnabled: true,
   apiConfiguredAt: null,
+  apiReadyFingerprint: null,
   catalog: {
     initialCount: 5,
     refreshEveryTurns: 30,
@@ -44,8 +45,6 @@ export const DEFAULT_SETTINGS = Object.freeze({
     connectionMode: 'direct',
     timeoutMs: 8000,
     catalogTimeoutMs: 90000,
-    catalogSoftInputTokenLimit: 8000,
-    catalogInputTokenLimit: 12000,
   },
   debug: {
     enabled: true,

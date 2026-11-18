@@ -280,59 +280,11 @@ export function createSillyTavernAdapter({ windowObject = globalThis, documentOb
     },
 
     mountPanel(element) {
-      const target = doc?.querySelector?.('#extensions_settings, #extensions_settings2, .extensions_block') ?? doc?.body;
+      const target = doc?.querySelector?.('#extensions_settings') ?? doc?.querySelector?.('#extensions_settings2');
       target?.appendChild?.(element);
-      addChatEntry(win, doc, element);
+      doc?.getElementById?.('world-event-director-chat-entry')?.remove();
     },
   };
-}
-
-function addChatEntry(win, doc, panel) {
-  const container = doc?.querySelector?.('#leftSendForm');
-  if (!container || doc?.getElementById?.('world-event-director-chat-entry')) return;
-
-  const entry = doc.createElement?.('div');
-  if (!entry) return;
-  entry.id = 'world-event-director-chat-entry';
-  entry.className = 'fa-solid fa-earth-americas interactable';
-  entry.title = '世界导演';
-  entry.setAttribute?.('role', 'button');
-  entry.setAttribute?.('tabindex', '0');
-  entry.setAttribute?.('aria-label', '打开世界导演');
-
-  const openPanel = () => {
-    const drawer = doc.querySelector?.('#extensions-settings-button');
-    const content = drawer?.querySelector?.(':scope > .drawer-content');
-    if (drawer && content?.classList.contains('closedDrawer')) {
-      const toggle = drawer.querySelector?.(':scope > .drawer-toggle');
-      if (toggle && typeof win.toggleDrawer === 'function') {
-        win.toggleDrawer(toggle);
-      } else {
-        toggle?.click?.();
-      }
-    }
-
-    const panelDrawer = panel.querySelector?.('.inline-drawer');
-    const panelHeader = panel.querySelector?.('.wed-drawer-header');
-    if (panelDrawer && panelHeader?.getAttribute('aria-expanded') !== 'true') {
-      if (typeof win.toggleDrawer === 'function') {
-        win.toggleDrawer(panelDrawer, true);
-      } else {
-        panelHeader.click?.();
-      }
-      panelHeader?.setAttribute?.('aria-expanded', 'true');
-    }
-
-    panel.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
-  };
-  entry.addEventListener?.('click', openPanel);
-  entry.addEventListener?.('keydown', (event) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault?.();
-      openPanel();
-    }
-  });
-  container.appendChild?.(entry);
 }
 
 function getContext(win) {

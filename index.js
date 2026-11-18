@@ -10,7 +10,8 @@ import { createChatStateStore } from './storage/chat-state-store.js';
 import { createEventLibraryStore } from './storage/event-library-store.js';
 import { createContextSnapshotStore } from './storage/context-snapshot-store.js';
 import { createApiCacheStore } from './storage/api-cache-store.js';
-import { createSettingsStore, exportSettings } from './storage/settings-store.js';
+import { createSettingsStore, exportSettings, mergeSettings } from './storage/settings-store.js';
+import { canAutoGenerate, connectionFingerprint } from './core/connection-readiness.js';
 import { requestEventCatalog, testDirectorConnection, fetchModelList } from './api/openai-compatible-client.js';
 import { createPanel } from './ui/panel.js';
 import { validateCatalogReferences, validateTemplate } from './core/event-validator.js';
@@ -42,6 +43,7 @@ let disposers = [];
 let initialized = false;
 let activeRequest = null;
 let generationAllowsInjection = false;
+let testedConnection = null;
 const lifecycle = createInjectionLifecycle({ libraryStore: eventLibraryStore, stateStore, injector,
   isCurrent: (identity) => catalogIdentityKey(identity) === catalogIdentityKey(adapter.getIdentity()) });
 const coordinator = createCatalogCoordinator({
@@ -66,6 +68,8 @@ const coordinator = createCatalogCoordinator({
   },
   onCommit: async (identity) => { await loadLibraryForChat(identity); renderPanel(); },
   onProgress: (identity, progress) => { patchCatalogDiagnostic(identity, progress); renderPanel(); },
+  onRound: (identity, round) => logger.info('事件生成轮次结束', { chatId: identity.chatId, ...round,
+    durationMs: round.endedAt - round.startedAt }),
 });
 const inChat = (identity, task) => mutex.run(catalogIdentityKey(identity), async () => {
   if (catalogIdentityKey(identity) !== catalogIdentityKey(adapter.getIdentity())) return;
@@ -179,7 +183,7 @@ async function runTick({ reason = 'manual', force = false } = {}) {
     let automatic = null;
     if (due && settings.enabled && !settings.paused) {
       const record = eventLibraryStore.get(identity);
-      if (settings.api.apiKey && !coordinator.isRunning(identity)) {
+      if (await canAutoGenerate({ settings, identity, hasSelectedCharacter: true }) && !coordinator.isRunning(identity)) {
         if (record.events.length < 5) automatic = 'auto_fill';
         else if (canAutomaticallyReplace(record)) automatic = 'auto_new';
       }
@@ -230,7 +234,7 @@ async function prepareInjectionForGeneration() {
     if (!settings.enabled || settings.paused) { injector.clear(); return; }
     const turn = stateStore.get(identity).turn + 1;
     if (turn - state.lastEventCheckTurn >= settings.eventCheckInterval
-      && settings.api.apiKey && !coordinator.isRunning(identity)) {
+      && await canAutoGenerate({ settings, identity, hasSelectedCharacter: true }) && !coordinator.isRunning(identity)) {
       const record = eventLibraryStore.get(identity);
       if (record.events.length < 5) automatic = 'auto_fill';
       else if (canAutomaticallyReplace(record)) automatic = 'auto_new';
@@ -320,10 +324,22 @@ const actions = {
   },
   async saveSettings(patch) {
     const before = settingsStore.get();
-    const savingApi = Boolean(patch?.api?.apiKey) || Boolean(before.api.apiKey && patch?.api);
+    const savingApi = Boolean(patch?.api);
+    let readiness = {};
+    if (savingApi) {
+      const candidate = mergeSettings(before, patch);
+      const fingerprint = await connectionFingerprint(candidate.api);
+      const result = testedConnection?.fingerprint === fingerprint && testedConnection.result.ok ? testedConnection.result
+        : await testDirectorConnection({ settings: candidate }).catch((error) => ({ ok: false, error: error.message }));
+      if (!result.ok) return { ok: false, error: result.error ?? '模型连接不可用，请检查后重新保存' };
+      testedConnection = { fingerprint, result };
+      readiness = { apiConfiguredAt: Date.now(), apiReadyFingerprint: fingerprint,
+        apiHealth: { ...result.health, checkedAt: Date.now() } };
+      if (before.apiReadyFingerprint !== fingerprint) coordinator.cancelAll();
+    }
     settingsStore.set({
       ...patch,
-      ...(savingApi ? { apiConfiguredAt: Date.now() } : {}),
+      ...readiness,
     });
     if (!settingsStore.get().enabled || settingsStore.get().paused) injector.clear();
     engine = createEventEngine({ templates: templateLibrary.list(), logger });
@@ -373,9 +389,9 @@ const actions = {
   },
   async testApi(settingsPatch = {}) {
     try {
-      const settings = settingsStore.set(settingsPatch);
+      const settings = mergeSettings(settingsStore.get(), settingsPatch);
       const result = await testDirectorConnection({ settings });
-      settingsStore.set({ apiHealth: { ...result.health, checkedAt: Date.now() } });
+      testedConnection = { fingerprint: await connectionFingerprint(settings.api), result };
       if (!result.ok) throw new Error('API 模型调用或 JSON 能力测试失败');
       logger.info('事件导演 API 测试成功');
       renderPanel();
@@ -388,7 +404,7 @@ const actions = {
   },
   async fetchModels(settingsPatch = {}) {
     try {
-      const settings = settingsStore.set(settingsPatch);
+      const settings = mergeSettings(settingsStore.get(), settingsPatch);
       const models = await fetchModelList({ settings, cacheStore: apiCacheStore, force: true });
       logger.info('模型列表获取成功', { count: models.length });
       return { ok: true, models, stale: Boolean(models.stale) };
@@ -478,6 +494,8 @@ async function editLibrary(change) {
 }
 
 async function generateEventCatalog(identity, trigger = 'manual_regenerate') {
+  if (trigger.startsWith('auto') && !await canAutoGenerate({ settings: settingsStore.get(), identity,
+    hasSelectedCharacter: adapter.hasSelectedCharacter() })) return [];
   const pending = coordinator.run(identity, trigger);
   renderPanel();
   const result = await pending;
@@ -491,10 +509,12 @@ async function generateEventCatalog(identity, trigger = 'manual_regenerate') {
   return result.events;
 }
 
-function startInitialCatalog(identity) {
+async function startInitialCatalog(identity) {
   if (catalogIdentityKey(identity) !== catalogIdentityKey(adapter.getIdentity())
     || !adapter.hasSelectedCharacter() || identity.chatId === 'unknown-chat') return;
   const settings = settingsStore.get();
+  if (!await canAutoGenerate({ settings, identity, hasSelectedCharacter: adapter.hasSelectedCharacter() })) return;
+  if (catalogIdentityKey(identity) !== catalogIdentityKey(adapter.getIdentity())) return;
   const record = eventLibraryStore.get(identity);
   if (!settings.enabled || settings.paused || !settings.api.apiKey || !settings.api.baseUrl
     || !settings.api.model || coordinator.isRunning(identity)) return;

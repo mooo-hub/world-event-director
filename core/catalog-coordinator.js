@@ -8,7 +8,8 @@ export const catalogIdentityKey = (identity = {}) => JSON.stringify([
 ]);
 
 export function createCatalogCoordinator({ libraryStore, checkpointStore, mutex, getIdentity,
-  prepareContext, getBackgroundRevision, request, validate, onCommit = async () => {}, onProgress = () => {} }) {
+  prepareContext, getBackgroundRevision, request, validate, onCommit = async () => {}, onProgress = () => {},
+  onRound = () => {} }) {
   const running = new Map();
   let epoch = 0;
   const current = (identity) => catalogIdentityKey(identity) === catalogIdentityKey(getIdentity());
@@ -19,10 +20,9 @@ export function createCatalogCoordinator({ libraryStore, checkpointStore, mutex,
     let cycle;
     let lastError = null;
     const startedAt = Date.now();
-    const rounds = [];
     let timing = null;
     const progress = (extra = {}) => onProgress(identity, { status: 'running', startedAt,
-      attempts: cycle?.requestsUsed ?? 0, rounds: rounds.map((round) => ({ ...round })),
+      attempts: cycle?.requestsUsed ?? 0,
       timing, ...extra });
     try {
       cycle = await locked(identity, async () => {
@@ -99,7 +99,7 @@ export function createCatalogCoordinator({ libraryStore, checkpointStore, mutex,
             onTiming: (next) => { if (isCurrent()) { timing = next; progress({ requested }); } } });
         } catch (error) {
           lastError = error.message || '模型请求或返回格式失败';
-          rounds.push({ attempt: cycle.requestsUsed, startedAt: roundStartedAt, endedAt: Date.now(),
+          onRound(identity, { attempt: cycle.requestsUsed, startedAt: roundStartedAt, endedAt: Date.now(),
             requested, accepted: 0, rejected: 0, error: lastError, timing });
           progress({ error: lastError });
           if (error.retryable === false) break;
@@ -152,7 +152,7 @@ export function createCatalogCoordinator({ libraryStore, checkpointStore, mutex,
           return true;
         });
         lastError = committed ? null : '本轮没有合格的新事件';
-        rounds.push({ attempt: cycle.requestsUsed, startedAt: roundStartedAt, endedAt: Date.now(),
+        onRound(identity, { attempt: cycle.requestsUsed, startedAt: roundStartedAt, endedAt: Date.now(),
           requested, accepted: acceptedCount,
           rejected: (response.rejected?.length ?? 0) + Math.max(0, (response.events?.length ?? 0) - acceptedCount),
           rejectionReasons: [...new Set(rejectionReasons)].slice(0, 12), error: lastError, timing });

@@ -6,7 +6,6 @@ import {
 } from './model-response-schema.js';
 import { sanitizeForLog } from '../core/log.js';
 import { normalizeTemplate, validateCatalogReferences, validateTemplate } from '../core/event-validator.js';
-import { compileCatalogContext, measureCatalogRequest } from '../core/catalog-context-compiler.js';
 import { validateGeneratedEvent } from '../core/catalog-quality.js';
 
 
@@ -272,19 +271,12 @@ export async function requestEventCatalog({
       existingEvents: existingEvents.map(({ id, title, category }) => ({ id, title, category })),
       replaceEventIds, activeEvent, eventHistory }) },
   ];
-  const compilation = compileCatalogContext(contextSummary, {
-    softTokens: api.catalogSoftInputTokenLimit, hardTokens: api.catalogInputTokenLimit,
-    measure: (context) => measureCatalogRequest(buildMessages(context), {
-      softTokens: api.catalogSoftInputTokenLimit, hardTokens: api.catalogInputTokenLimit,
-    }),
-  });
-  if (!compilation.ok) throw new Error('catalog_context_too_large: 背景超过输入上限，请重新同步');
   const payload = {
     model: api.model, temperature: Number(api.temperature ?? 0.2),
-    max_tokens: Math.max(Number(api.maxTokens ?? 800), count * 700), messages: buildMessages(compilation.context),
+    max_tokens: Math.max(Number(api.maxTokens ?? 800), count * 700), messages: buildMessages(contextSummary),
     ...(requestNumber === 1 ? { response_format: { type: 'json_object' } } : {}),
   };
-  logger.info?.('发送事件清单请求', { requestNumber, count, requestBudget: compilation.diagnostics });
+  logger.info?.('发送事件清单请求', { requestNumber, count });
   const parsed = await performCatalogFetch({ fetcher, api, payload,
     url: `${normalizeBaseUrl(api.baseUrl)}/chat/completions`, timeoutMs: Math.max(1000, Number(api.catalogTimeoutMs ?? 90000)), logger, onTiming, requestNumber });
   const events = Array.isArray(parsed) ? parsed : parsed.events ?? (mode === 'review' ? [] : null);
@@ -295,7 +287,7 @@ export async function requestEventCatalog({
   for (const raw of events) {
     const event = normalizeTemplate(raw);
     const schema = validateTemplate(event);
-    const references = validateCatalogReferences(event, compilation.context);
+    const references = validateCatalogReferences(event, contextSummary);
     const quality = validateGeneratedEvent(event);
     if (!schema.valid || !references.valid || !quality.valid || seen.has(event.id)) {
       rejected.push({ id: event.id, errors: [...schema.errors, ...references.errors, ...quality.errors] });
@@ -306,8 +298,8 @@ export async function requestEventCatalog({
     seen.add(event.id);
   }
   // The coordinator owns the shared four-request budget and submits partial results.
-  return { events: accepted, rejected, contextSummary: compilation.context,
-    requestBudget: compilation.diagnostics, requestAttempts: 1,
+  return { events: accepted, rejected, contextSummary,
+    requestAttempts: 1,
     eventProgress: Array.isArray(parsed.eventProgress) ? parsed.eventProgress.filter(isValidProgress) : [] };
 }
 

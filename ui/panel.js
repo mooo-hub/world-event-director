@@ -130,6 +130,8 @@ export function createPanel({ actions, getSnapshot }) {
   });
 
   function render(snapshot) {
+    const apiDrafts = [...element.querySelectorAll('[data-setting^="api."]')]
+      .map((input) => ({ path: input.dataset.setting, value: input.value, masked: input.dataset.secretMasked }));
     const drafts = [...element.querySelectorAll('#wed-template-editor, #wed-import-export, #wed-template-editor-select')]
       .map((input) => ({ id: input.id, value: input.value }));
     if (!availableModels.length && Array.isArray(snapshot.models)) availableModels = snapshot.models;
@@ -138,6 +140,13 @@ export function createPanel({ actions, getSnapshot }) {
     )).join('');
     element.querySelector('.wed-body').innerHTML = renderTab(activeTab, { ...snapshot, availableModels });
     element.querySelector('.wed-body').setAttribute('aria-labelledby', `wed-tab-${activeTab}`);
+    for (const draft of apiDrafts) {
+      const input = element.querySelector(`[data-setting="${draft.path}"]`);
+      if (input) {
+        input.value = draft.value;
+        if (draft.masked) input.dataset.secretMasked = draft.masked;
+      }
+    }
     for (const draft of drafts) {
       const input = element.querySelector(`#${draft.id}`);
       if (input) input.value = draft.value;
@@ -604,19 +613,10 @@ function showToast(toast, message, duration = 2000) {
 
 function generationProgress({ catalogBusy, state }) {
   const diagnostic = state.flags?.catalogDiagnostic;
-  const rounds = (diagnostic?.rounds ?? []).map((round) => {
-    const timing = round.timing ?? {};
-    const seconds = ((round.endedAt - round.startedAt) / 1000).toFixed(1);
-    const headers = timing.headersAt ? `收到响应头 ${((timing.headersAt - timing.startedAt) / 1000).toFixed(1)} 秒` : '未收到响应头';
-    const body = timing.bodyCompletedAt ? `，完整响应 ${((timing.bodyCompletedAt - timing.startedAt) / 1000).toFixed(1)} 秒` : '';
-    const rejection = round.rejectionReasons?.length ? `；校验原因：${round.rejectionReasons.join('；')}` : '';
-    return `<li>第 ${round.attempt} 次：${seconds} 秒，通过 ${round.accepted}/${round.requested} 条，未通过 ${round.rejected} 条${round.accepted ? '，已更新事件库' : ''}<br><small>${escapeHtml(headers + body)}${round.error ? `；${escapeHtml(round.error)}` : ''}${escapeHtml(rejection)}</small></li>`;
-  }).join('');
-  const history = rounds ? `<ol class="wed-note" aria-live="polite">${rounds}</ol>` : '';
-  if (!catalogBusy) return history;
+  if (!catalogBusy) return '';
   const seconds = Math.max(0, Math.floor((Date.now() - (diagnostic?.startedAt ?? Date.now())) / 1000));
   const timing = diagnostic?.timing;
   const stage = ({ waiting_headers: '等待服务响应', reading_body: '正在接收完整结果', body_complete: '正在解析结果', parsed: '正在校验并保存', timeout: '本次超时', failed: '本次请求失败' })[timing?.stage] ?? '正在准备请求';
   const attemptSeconds = timing?.startedAt ? ` · 本次 ${Math.max(0, Math.floor((Date.now() - timing.startedAt) / 1000))} 秒` : '';
-  return `<p class="wed-generation-status"><span class="wed-spinner" aria-hidden="true"></span>正在生成事件 · 第 ${diagnostic?.attempts ?? 0}/4 次请求 · 累计等待 ${seconds} 秒<br><small>${stage}${attemptSeconds}。每次最多等待 90 秒，最多 4 次。每轮合格事件立即显示，只继续请求剩余条数。</small></p>${history}`;
+  return `<p class="wed-generation-status"><span class="wed-spinner" aria-hidden="true"></span>正在生成事件 · 第 ${diagnostic?.attempts ?? 0}/4 次请求 · 累计等待 ${seconds} 秒<br><small>${stage}${attemptSeconds}。每次最多等待 90 秒，最多 4 次。</small></p>`;
 }
