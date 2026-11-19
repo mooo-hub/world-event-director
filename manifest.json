@@ -7,7 +7,7 @@
   "js": "index.js",
   "css": "ui/panel.css",
   "author": "Robert Smith + Codex",
-  "version": "0.3.0-rc.6",
+  "version": "0.3.0-rc.7",
   "homePage": "https://github.com/mooo-hub/world-event-director",
   "auto_update": false,
   "minimum_client_version": "1.12.0",

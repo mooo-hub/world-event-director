@@ -1,4 +1,4 @@
-import { canAutomaticallyReplace } from './injection-lifecycle.js';
+import { needsAutomaticCatalog } from './injection-lifecycle.js';
 
 const TARGET = 5;
 const MAX_REQUESTS = 4;
@@ -11,12 +11,13 @@ export function createCatalogCoordinator({ libraryStore, checkpointStore, mutex,
   prepareContext, getBackgroundRevision, request, validate, onCommit = async () => {}, onProgress = () => {},
   onRound = () => {} }) {
   const running = new Map();
+  const controllers = new Map();
   let epoch = 0;
   const current = (identity) => catalogIdentityKey(identity) === catalogIdentityKey(getIdentity());
   const locked = (identity, task) => mutex.run(catalogIdentityKey(identity), task);
-  async function execute(identity, trigger) {
+  async function execute(identity, trigger, controller) {
     const startedEpoch = epoch;
-    const isCurrent = () => epoch === startedEpoch && current(identity);
+    const isCurrent = () => !controller.signal.aborted && epoch === startedEpoch && current(identity);
     let cycle;
     let lastError = null;
     const startedAt = Date.now();
@@ -31,13 +32,14 @@ export function createCatalogCoordinator({ libraryStore, checkpointStore, mutex,
         const fill = trigger.endsWith('fill');
         const retained = fill ? previous?.events.length ?? 0 : 0;
         if (fill && retained >= TARGET) return null;
-        if (trigger === 'auto_new' && previous?.events.length && !canAutomaticallyReplace(previous)) return null;
+        if (trigger.startsWith('auto') && !needsAutomaticCatalog(previous)) return null;
         const checkpoint = checkpointStore.read(identity);
         const old = previous?.generationCycle;
         if (trigger.startsWith('auto') && checkpoint && (!old || checkpoint.cycleId !== old.cycleId)) {
           throw new Error('生成请求记录未恢复一致，请手动点击补足事件或重新生成');
         }
-        const resume = trigger.startsWith('auto') && old && old.requestsUsed < MAX_REQUESTS
+        const resume = trigger.startsWith('auto') && old && !old.cancelled && old.requestsUsed < MAX_REQUESTS
+          && previous?.currentCatalogRevision !== old.revision
           && old.acceptedAdded < old.targetAdded;
         if (resume) {
           const catalog = previous.catalogs[old.revision];
@@ -95,9 +97,11 @@ export function createCatalogCoordinator({ libraryStore, checkpointStore, mutex,
         progress({ requested, error: null });
         try {
           response = await request({ context: prepared.context, count: cycle.targetAdded - cycle.acceptedAdded,
+            signal: controller.signal,
             existingEvents: prepared.existingEvents, requestNumber: cycle.requestsUsed, previousError: lastError,
             onTiming: (next) => { if (isCurrent()) { timing = next; progress({ requested }); } } });
         } catch (error) {
+          if (controller.signal.aborted) throw error;
           lastError = error.message || '模型请求或返回格式失败';
           onRound(identity, { attempt: cycle.requestsUsed, startedAt: roundStartedAt, endedAt: Date.now(),
             requested, accepted: 0, rejected: 0, error: lastError, timing });
@@ -158,21 +162,45 @@ export function createCatalogCoordinator({ libraryStore, checkpointStore, mutex,
           rejectionReasons: [...new Set(rejectionReasons)].slice(0, 12), error: lastError, timing });
         progress({ error: lastError });
       }
+      if (controller.signal.aborted) throw new Error('生成已终止');
       if (cycle.acceptedAdded >= cycle.targetAdded) checkpointStore.clear(identity);
       return { ok: cycle.acceptedAdded >= cycle.targetAdded, partial: cycle.acceptedAdded > 0,
         requestsUsed: cycle.requestsUsed, events: current(identity) ? libraryStore.get(identity)?.events ?? [] : [],
         error: cycle.acceptedAdded < cycle.targetAdded ? `${lastError ?? '本次未补齐'}；已有事件保留，可手动补足` : null };
     } catch (error) {
+      if (controller.signal.aborted) {
+        await locked(identity, async () => {
+          // A chat switch must not write into the newly selected chat's metadata.
+          if (!current(identity)) return;
+          await libraryStore.update(identity, (record) => {
+            if (!cycle || record.generationCycle?.cycleId === cycle.cycleId) {
+              record.generationCycle = { ...record.generationCycle, cancelled: true };
+            }
+            return record;
+          });
+        });
+        return { ok: false, cancelled: true, error: null, requestsUsed: cycle?.requestsUsed ?? 0 };
+      }
       return { ok: false, error: error.message, requestsUsed: cycle?.requestsUsed ?? 0 };
     }
   }
   return {
-    cancelAll() { epoch += 1; },
+    cancelAll() { epoch += 1; for (const controller of controllers.values()) controller.abort(); },
+    async cancel(identity) {
+      const key = catalogIdentityKey(identity);
+      controllers.get(key)?.abort();
+      await running.get(key);
+    },
     isRunning: (identity) => running.has(catalogIdentityKey(identity)),
     run(identity, trigger) {
       const key = catalogIdentityKey(identity);
       if (running.has(key)) return running.get(key);
-      const promise = execute(identity, trigger).finally(() => running.delete(key));
+      const controller = new AbortController();
+      controllers.set(key, controller);
+      const promise = execute(identity, trigger, controller).finally(() => {
+        running.delete(key);
+        controllers.delete(key);
+      });
       running.set(key, promise);
       return promise;
     },

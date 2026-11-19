@@ -10,9 +10,12 @@ function init(router) {
   router.post('/proxy/forward', async (req, res) => {
     const { targetUrl, method = 'POST', headers = {}, body } = req.body ?? {};
     if (!targetUrl) return res.status(400).json({ error: 'Missing targetUrl' });
-
+    const controller = new AbortController();
+    const cancel = () => { if (!res.writableEnded) controller.abort(); };
+    res.on('close', cancel);
     try {
       const fetchOptions = {
+        signal: controller.signal,
         method,
         headers: redactInboundHeaders(headers),
         body: body ? (typeof body === 'string' ? body : JSON.stringify(body)) : undefined,
@@ -26,7 +29,9 @@ function init(router) {
       const text = await response.text();
       res.status(response.status).type(response.headers.get('content-type') ?? 'application/json').send(text);
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      if (!res.destroyed) res.status(500).json({ error: error.message });
+    } finally {
+      res.off('close', cancel);
     }
   });
 

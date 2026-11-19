@@ -17,7 +17,7 @@ import { createPanel } from './ui/panel.js';
 import { validateCatalogReferences, validateTemplate } from './core/event-validator.js';
 import { createCatalogCoordinator, catalogIdentityKey } from './core/catalog-coordinator.js';
 import { createGenerationCheckpointStore } from './core/generation-checkpoint.js';
-import { createInjectionLifecycle, canAutomaticallyReplace } from './core/injection-lifecycle.js';
+import { createInjectionLifecycle, needsAutomaticCatalog } from './core/injection-lifecycle.js';
 import { buildEventPrompt } from './core/prompt-injector.js';
 import { injectPromptIntoGenerationData, removeEventPromptFromGenerationData } from './core/request-injector.js';
 
@@ -58,8 +58,8 @@ const coordinator = createCatalogCoordinator({
   },
   getBackgroundRevision: () => syncManager.isInvalidated() ? null
     : buildEventGenerationContext({ context: cache.get() }).value?.backgroundRevision,
-  request: ({ context, count, existingEvents, requestNumber, previousError, onTiming }) => requestEventCatalog({
-    settings: settingsStore.get(), contextSummary: context, count, existingEvents, requestNumber, previousError, logger, onTiming,
+  request: ({ context, count, existingEvents, requestNumber, previousError, onTiming, signal }) => requestEventCatalog({
+    settings: settingsStore.get(), contextSummary: context, count, existingEvents, requestNumber, previousError, logger, onTiming, signal,
   }),
   validate: (event, context) => {
     const template = validateTemplate(event);
@@ -184,8 +184,7 @@ async function runTick({ reason = 'manual', force = false } = {}) {
     if (due && settings.enabled && !settings.paused) {
       const record = eventLibraryStore.get(identity);
       if (await canAutoGenerate({ settings, identity, hasSelectedCharacter: true }) && !coordinator.isRunning(identity)) {
-        if (record.events.length < 5) automatic = 'auto_fill';
-        else if (canAutomaticallyReplace(record)) automatic = 'auto_new';
+        if (needsAutomaticCatalog(record)) automatic = 'auto_new';
       }
     }
     if (state.pendingEvent) {
@@ -236,8 +235,7 @@ async function prepareInjectionForGeneration() {
     if (turn - state.lastEventCheckTurn >= settings.eventCheckInterval
       && await canAutoGenerate({ settings, identity, hasSelectedCharacter: true }) && !coordinator.isRunning(identity)) {
       const record = eventLibraryStore.get(identity);
-      if (record.events.length < 5) automatic = 'auto_fill';
-      else if (canAutomaticallyReplace(record)) automatic = 'auto_new';
+      if (needsAutomaticCatalog(record)) automatic = 'auto_new';
     }
     if (!state.pendingEvent) {
       const { context } = await syncManager.deltaSync(identity);
@@ -300,6 +298,11 @@ function finishGeneration(stopped) {
 }
 
 const actions = {
+  async stopGeneration() {
+    await coordinator.cancel(adapter.getIdentity());
+    renderPanel();
+    return { ok: true, message: '已终止生成，已保存的事件保留' };
+  },
   async resync({ generateCatalog = false } = {}) {
     if (!adapter.hasSelectedCharacter?.()) return { ok: false, error: '请先选择角色，再同步上下文' };
     const identity = adapter.getIdentity();
@@ -308,7 +311,7 @@ const actions = {
       try {
         await generateEventCatalog(identity);
       } catch (error) {
-        logger.warn('事件清单生成失败，已降级到本地事件清单', { error: error.message });
+        logger.warn('事件清单生成未完成，已有事件保留', { error: error.message });
         await loadLibraryForChat(identity);
       }
     } else {
@@ -496,15 +499,17 @@ async function editLibrary(change) {
 async function generateEventCatalog(identity, trigger = 'manual_regenerate') {
   if (trigger.startsWith('auto') && !await canAutoGenerate({ settings: settingsStore.get(), identity,
     hasSelectedCharacter: adapter.hasSelectedCharacter() })) return [];
+  if (trigger.startsWith('auto') && !needsAutomaticCatalog(eventLibraryStore.get(identity))) return [];
   const pending = coordinator.run(identity, trigger);
   renderPanel();
   const result = await pending;
   if (catalogIdentityKey(identity) === catalogIdentityKey(adapter.getIdentity())) {
-    patchCatalogDiagnostic(identity, { status: result.ok ? 'success' : 'failed',
+    patchCatalogDiagnostic(identity, { status: result.cancelled ? 'cancelled' : result.ok ? 'success' : 'failed',
       attempts: result.requestsUsed ?? 0, error: result.error });
     refreshLibrary(identity);
     renderPanel();
   }
+  if (result.cancelled) throw new Error('已终止生成，已保存的事件保留');
   if (!result.ok) throw new Error(result.error);
   return result.events;
 }
@@ -516,19 +521,18 @@ async function startInitialCatalog(identity) {
   if (!await canAutoGenerate({ settings, identity, hasSelectedCharacter: adapter.hasSelectedCharacter() })) return;
   if (catalogIdentityKey(identity) !== catalogIdentityKey(adapter.getIdentity())) return;
   const record = eventLibraryStore.get(identity);
+  if (!needsAutomaticCatalog(record)) return;
   if (!settings.enabled || settings.paused || !settings.api.apiKey || !settings.api.baseUrl
     || !settings.api.model || coordinator.isRunning(identity)) return;
   const cycle = record?.generationCycle;
   if (cycle) {
-    if (cycle.acceptedAdded >= cycle.targetAdded || cycle.requestsUsed >= 4) return;
+    if (cycle.cancelled || cycle.requestsUsed >= 4 && !record.events.length) return;
     // Reloading while the first request is in progress must resume its existing budget.
   }
-  // Only replace untouched bundled templates, never user edits or an in-flight event.
-  if (!cycle && record && (record.source !== 'fallback' || record.events.some((event) => event.status !== 'generated'))) return;
   void generateEventCatalog(identity, 'auto_initial').then(() => {
     if (catalogIdentityKey(identity) === catalogIdentityKey(adapter.getIdentity())) panel.showToast('当前聊天的事件已生成', 3000);
   }).catch((error) => {
-    logger.warn('首次事件生成未完成，本地事件仍可使用', { error: error.message });
+    logger.warn('自动事件生成未完成，已有事件保留', { error: error.message });
     if (catalogIdentityKey(identity) === catalogIdentityKey(adapter.getIdentity())) panel.showToast(`生成未完成：${error.message}`, 5000);
   });
 }
@@ -542,11 +546,17 @@ function patchCatalogDiagnostic(identity, diagnostic) {
 
 async function loadLibraryForChat(identity) {
   if (catalogIdentityKey(identity) !== catalogIdentityKey(adapter.getIdentity())) return;
+  // Bundled examples from earlier versions are not usable generated events.
+  if (eventLibraryStore.get(identity)?.source === 'fallback') {
+    eventLibraryStore.replace([], identity, { source: 'api' });
+    generationCheckpoints.clear(identity);
+    await eventLibraryStore.flush();
+  }
   if (!eventLibraryStore.get(identity)) {
     if (!adapter.hasSelectedCharacter() || identity.chatId === 'unknown-chat') {
       templateLibrary.replace([]); return;
     }
-    eventLibraryStore.replace(fallbackTemplates, identity, { source: 'fallback' });
+    eventLibraryStore.replace([], identity, { source: 'api' });
     await eventLibraryStore.flush();
   }
   if (!activeRequest || catalogIdentityKey(activeRequest.identity) !== catalogIdentityKey(identity)

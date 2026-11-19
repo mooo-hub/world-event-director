@@ -260,7 +260,7 @@ export async function requestEventCatalog({
   settings, contextSummary, count = 5, existingEvents = [], replaceEventIds = [],
   mode = 'initial', activeEvent = null, eventHistory = [], requestNumber = 1,
   previousError = null, fetcher = globalThis.fetch, logger = console,
-  onTiming = () => {},
+  onTiming = () => {}, signal,
 }) {
   const api = settings?.api ?? {};
   if (!api.apiKey || !api.baseUrl) throw new Error('请先配置事件导演 API');
@@ -278,7 +278,7 @@ export async function requestEventCatalog({
   };
   logger.info?.('发送事件清单请求', { requestNumber, count });
   const parsed = await performCatalogFetch({ fetcher, api, payload,
-    url: `${normalizeBaseUrl(api.baseUrl)}/chat/completions`, timeoutMs: Math.max(1000, Number(api.catalogTimeoutMs ?? 90000)), logger, onTiming, requestNumber });
+    url: `${normalizeBaseUrl(api.baseUrl)}/chat/completions`, timeoutMs: Math.max(1000, Number(api.catalogTimeoutMs ?? 90000)), logger, onTiming, requestNumber, signal });
   const events = Array.isArray(parsed) ? parsed : parsed.events ?? (mode === 'review' ? [] : null);
   if (!Array.isArray(events)) throw new Error('模型未返回事件数组');
   const accepted = [];
@@ -303,8 +303,11 @@ export async function requestEventCatalog({
     eventProgress: Array.isArray(parsed.eventProgress) ? parsed.eventProgress.filter(isValidProgress) : [] };
 }
 
-async function performCatalogFetch({ fetcher, url, api, payload, timeoutMs, logger, onTiming, requestNumber }) {
+async function performCatalogFetch({ fetcher, url, api, payload, timeoutMs, logger, onTiming, requestNumber, signal }) {
   const controller = new AbortController();
+  const cancel = () => controller.abort();
+  signal?.addEventListener('abort', cancel, { once: true });
+  if (signal?.aborted) controller.abort();
   const startedAt = Date.now();
   let timing = { requestNumber, startedAt, stage: 'waiting_headers', timeoutMs };
   const report = (next) => {
@@ -338,6 +341,12 @@ async function performCatalogFetch({ fetcher, url, api, payload, timeoutMs, logg
     report({ stage: 'parsed', parsedAt: Date.now() });
     return parsed;
   } catch (error) {
+    if (signal?.aborted) {
+      report({ stage: 'cancelled', cancelledAt: Date.now() });
+      const cancelled = new Error('用户已终止生成');
+      cancelled.retryable = false;
+      throw cancelled;
+    }
     const failureKind = error.name === 'AbortError' ? 'timeout'
       : timing.httpStatus >= 400 ? 'http'
         : timing.bodyCompletedAt ? 'response_format'
@@ -351,6 +360,7 @@ async function performCatalogFetch({ fetcher, url, api, payload, timeoutMs, logg
     }
     throw error;
   } finally {
+    signal?.removeEventListener('abort', cancel);
     clearTimeout(timeout);
   }
 }

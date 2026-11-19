@@ -618,5 +618,5 @@ function generationProgress({ catalogBusy, state }) {
   const timing = diagnostic?.timing;
   const stage = ({ waiting_headers: '等待服务响应', reading_body: '正在接收完整结果', body_complete: '正在解析结果', parsed: '正在校验并保存', timeout: '本次超时', failed: '本次请求失败' })[timing?.stage] ?? '正在准备请求';
   const attemptSeconds = timing?.startedAt ? ` · 本次 ${Math.max(0, Math.floor((Date.now() - timing.startedAt) / 1000))} 秒` : '';
-  return `<p class="wed-generation-status"><span class="wed-spinner" aria-hidden="true"></span>正在生成事件 · 第 ${diagnostic?.attempts ?? 0}/4 次请求 · 累计等待 ${seconds} 秒<br><small>${stage}${attemptSeconds}。每次最多等待 90 秒，最多 4 次。</small></p>`;
+  return `<div class="wed-generation-status"><span class="wed-spinner" aria-hidden="true"></span>正在生成事件 · 第 ${diagnostic?.attempts ?? 0}/4 次请求 · 累计等待 ${seconds} 秒<br><small>${stage}${attemptSeconds}。每次最多等待 90 秒，最多 4 次。</small><div class="wed-actions-row"><button type="button" class="wed-button danger" data-action="stopGeneration">终止生成</button></div></div>`;
 }

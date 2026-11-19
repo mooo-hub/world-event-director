@@ -109,8 +109,11 @@ export function createInjectionLifecycle({ libraryStore, stateStore, injector, n
 
 export function canAutomaticallyReplace(record) {
   const catalog = record?.catalogs?.[record.currentCatalogRevision];
-  if (!catalog || catalog.events.length < 5) return false;
-  return catalog.events.every((event) => catalog.statusByEventId[event.id] === 'occurred'
-    && Object.values(record.injectionReceipts).some((receipt) => receipt.revision === catalog.revision
-      && receipt.eventId === event.id && receipt.phase === 'completed'));
+  if (!catalog || !catalog.events.length) return false;
+  return catalog.events.every((event) => catalog.statusByEventId[event.id] === 'occurred');
+}
+
+export function needsAutomaticCatalog(record) {
+  if (record?.generationCycle?.cancelled) return false;
+  return record?.source === 'fallback' || !record?.events?.length || canAutomaticallyReplace(record);
 }
